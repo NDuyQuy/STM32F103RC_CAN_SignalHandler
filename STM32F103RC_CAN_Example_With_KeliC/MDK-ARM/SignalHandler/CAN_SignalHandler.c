@@ -133,34 +133,51 @@ uint32_t getSignal_MessageId(uint8_t signalArr_idx)
 }
 void getSignalMessageData(uint8_t signalArr_idx, uint8_t* data, uint16_t signal_read)
 {
+	/*
+	In the current using message for this code. It follow motorola byte order(big-endian).
+	And the startbit is locate the lsb bit.
+	*/
 	uint8_t startByte;
 	uint8_t startbit = signal_array[signalArr_idx].startbit;
 	uint8_t size = signal_array[signalArr_idx].size;
 	uint16_t signal_after = signal_read+1;
+	/*Start byte in the msg_read[]*/
 	startByte = 8*signal_array[signalArr_idx].msg_idx;
 	for(int i = 0; i < 8; i++)
 	{
-		data[i]=msg_read[startByte];
-		startByte++;
+		data[i]=msg_read[startByte+i];
 	}
-	uint8_t bytePosition = startbit / 8;
-	uint8_t bitPosition = startbit%8;
+	uint8_t bytePosition = startbit / 8;											//Start Byte Position in the message(64bit)
+	uint8_t bitPosition = startbit%8;													//Start bit position in the message(64bit)
+	//uint8_t byteLargerThan1 = (8 - bitPosition) > size;
+	uint8_t byteNumber = ((size - (8 - bitPosition))/8)+1;
+	uint8_t endBit = (startbit+size-1)-8*byteNumber;					//End bit position in the message(64bit)
+	uint8_t endByte = (endBit/8);															//End Byte Position in the message(64bit)
+	if(byteNumber==1)
+	{
+		uint8_t signal_shifted = (uint8_t)signal_after << bitPosition;
+		
+		uint8_t mask = ((1 << size) - 1) << bitPosition;
+		data[bytePosition] &= ~mask;
+		data[bytePosition] |= (signal_shifted & mask);
+	}else if(byteNumber==2)
+	{
+		uint16_t signal_shifted = signal_after << bitPosition;
 	
-	uint16_t signal_shifted = signal_after << bitPosition;
+		uint16_t mask = ((1 << size) - 1) << bitPosition;
+		
+		uint16_t final = signal_shifted & mask;
+		
+		uint8_t signal_l 	= 	(uint8_t)(final&0x00ff);							//get 8 bit lower in the signal
+		uint8_t nMaskL 		= 	(uint8_t)(~mask&0x00ff);	
+		uint8_t signal_h 	= 	(uint8_t)((final&0xff00)>>8);				//get 8 bit higher in the signal
+		uint8_t nMaskH 		= 	(uint8_t)(~mask&0xff00);	
+		
+		data[bytePosition] 		&= nMaskL;
+		data[bytePosition] 		|= signal_l;
+		
+		data[bytePosition-1] 	&= nMaskH;
+		data[bytePosition-1] 	|= signal_h;
+	}
 	
-	uint16_t mask = ((1 << size) - 1) << bitPosition;
-	
-	uint16_t surround_mask = ((1 << 16) - 1) & ~mask;
-	
-	uint16_t signal_from_arr = (uint16_t) ((data[bytePosition-1]<<8)|data[bytePosition]);
-	
-	uint16_t final = (signal_from_arr & surround_mask)|signal_shifted;
-	
-	uint8_t signal_h = (uint8_t)(final&0x00ff);
-	
-	uint8_t signal_l = (uint8_t)((final&0xff00)>>8);
-	
-	data[bytePosition] = signal_l;
-	
-	data[bytePosition-1] = signal_h;
 }
